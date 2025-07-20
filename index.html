@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic AI Piano</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+        }
+        .piano-container::-webkit-scrollbar { height: 8px; }
+        .piano-container::-webkit-scrollbar-track { background: #1f2937; border-radius: 10px; }
+        .piano-container::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 10px; }
+        .piano-container::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+
+        .piano { display: flex; position: relative; height: 180px; width: max-content; }
+        .key { border: 1px solid #374151; border-bottom-left-radius: 5px; border-bottom-right-radius: 5px; cursor: pointer; transition: all 0.1s ease; box-shadow: 0 3px 5px rgba(0,0,0,0.4); }
+        .white { width: 40px; height: 100%; background-color: #f9fafb; z-index: 1; }
+        .black { width: 25px; height: 60%; background: linear-gradient(to bottom, #2d3748, #1a202c); color: white; margin-left: -12.5px; margin-right: -12.5px; z-index: 2; }
+        .key.active.white { background-color: #6366f1; transform: scale(0.98); }
+        .key.active.black { background: linear-gradient(to bottom, #818cf8, #6366f1); transform: scale(0.98); }
+        
+        .loader { border: 4px solid rgba(255,255,255,0.2); border-top: 4px solid #6366f1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: #6366f1; cursor: pointer; border-radius: 50%; }
+        input[type=range]::-moz-range-thumb { width: 20px; height: 20px; background: #6366f1; cursor: pointer; border-radius: 50%; }
+    </style>
+</head>
+<body class="text-white flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-7xl p-4 md:p-6 bg-gray-900/70 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-700 space-y-6">
+        <div class="text-center border-b border-gray-700 pb-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-500">Agentic AI Piano</h1>
+            <p class="text-gray-400 mt-2">Ask the AI to play a famous song and describe the piano tone (e.g., "a soft version of...").</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+            <textarea id="prompt" rows="3" class="md:col-span-6 w-full p-3 bg-gray-800 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="e.g., A soft version of Clair de Lune. Or: An 80s synth version of Take On Me."></textarea>
+            <div class="md:col-span-3 w-full space-y-2">
+                <label for="bpm" class="font-medium text-sm text-gray-400">BPM: <span id="bpm-value">120</span></label>
+                <input type="range" id="bpm" min="60" max="180" value="120" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+            </div>
+            <div class="md:col-span-3 w-full flex gap-2">
+                <button id="generateBtn" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-all transform hover:scale-105">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><path d="M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+                    <span>Generate</span>
+                </button>
+                <button id="stopBtn" class="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-all transform hover:scale-105">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                    <span>Stop</span>
+                </button>
+            </div>
+        </div>
+        
+        <div id="loader-container" class="flex justify-center items-center h-24 hidden"><div class="loader"></div></div>
+        <div id="output-container" class="hidden space-y-4"><h3 id="playing-title" class="font-semibold text-lg text-indigo-300 text-center">AI Transcription Playing...</h3></div>
+
+        <div class="space-y-6 pt-4">
+            <div>
+                <h2 class="text-xl font-semibold mb-2 text-gray-300">Piano</h2>
+                <div class="piano-container overflow-x-auto bg-gray-800 p-4 rounded-lg shadow-inner"><div id="piano" class="piano"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const promptInput = document.getElementById('prompt');
+        const generateBtn = document.getElementById('generateBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const loaderContainer = document.getElementById('loader-container');
+        const outputContainer = document.getElementById('output-container');
+        const playingTitle = document.getElementById('playing-title');
+        const pianoContainer = document.getElementById('piano');
+        const bpmSlider = document.getElementById('bpm');
+        const bpmValue = document.getElementById('bpm-value');
+
+        let synths = {};
+        let isInitialized = false;
+
+        async function setupSynths() {
+            if (isInitialized) return;
+            await Tone.start();
+            
+            const reverb = new Tone.Reverb(0.6).toDestination();
+
+            // Define a palette of piano sounds
+            synths.pianos = {
+                classic_ep: new Tone.PolySynth(Tone.FMSynth, {
+                    harmonicity: 8, modulationIndex: 2, oscillator: { type: "sine" },
+                    envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 1.2 },
+                    modulation: { type: "square" },
+                    modulationEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.8 }
+                }).connect(reverb),
+                
+                bright_grand: new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'fatsawtooth', count: 3 },
+                    envelope: { attack: 0.01, decay: 0.5, sustain: 0.2, release: 1 }
+                }).connect(reverb),
+
+                soft_felt: new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'triangle' },
+                    envelope: { attack: 0.02, decay: 0.8, sustain: 0.2, release: 1.5 }
+                }).connect(reverb),
+
+                synth_pop: new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'pulse', width: 0.4 },
+                    envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.5 }
+                }).connect(reverb)
+            };
+
+            isInitialized = true;
+            console.log("Audio context started and synths initialized.");
+        }
+
+        function createPiano() {
+            const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+            [2, 3, 4, 5, 6].forEach(octave => {
+                notes.forEach(note => {
+                    const keyElement = document.createElement('div');
+                    const noteName = note + octave;
+                    keyElement.dataset.note = noteName;
+                    keyElement.className = note.includes('#') ? 'key black' : 'key white';
+                    keyElement.addEventListener('click', () => {
+                        // Use the default piano for manual clicks
+                        setupSynths().then(() => synths.pianos.classic_ep.triggerAttackRelease(noteName, '8n'));
+                    });
+                    pianoContainer.appendChild(keyElement);
+                });
+            });
+        }
+        
+        function highlightElement(element, duration) {
+            if (element) {
+                element.classList.add('active');
+                setTimeout(() => element.classList.remove('active'), duration);
+            }
+        }
+        const highlightPianoKey = (note, duration) => highlightElement(document.querySelector(`[data-note="${note}"]`), duration);
+
+        async function generateMusic() {
+            await setupSynths();
+            if (!promptInput.value) { alert("Please describe the music you want to create."); return; }
+
+            generateBtn.disabled = true;
+            loaderContainer.classList.remove('hidden');
+            outputContainer.classList.add('hidden');
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+
+            const instructionPrompt = `You are a Piano Transcription AI. Your task is to reproduce a famous song and select an appropriate piano tone based on the user's request.
+
+**CRITICAL RULES:**
+1.  **Analyze Tone:** First, analyze the user's request for descriptive words (e.g., "soft", "bright", "80s synth", "grand piano"). Based on this, select the most fitting tone from the available options: \`classic_ep\`, \`bright_grand\`, \`soft_felt\`, \`synth_pop\`.
+2.  **Transcribe, DO NOT Compose:** You must only generate notes for a song you recognize.
+3.  **If You Don't Know the Song:** If you cannot transcribe the requested song, you MUST return an empty JSON object: \`{"piano": [], "piano_tone": "classic_ep"}\`. DO NOT invent music.
+4.  **Focus on the Core Melody:** Transcribe a short, 4-bar iconic section.
+5.  **Output Format:** The response MUST be a single JSON object with keys "piano" and "piano_tone".
+    * \`piano_tone\`: One of the four string options listed above.
+    * \`piano\`: Array of objects with "note", "duration", "time", and "velocity".
+
+**User's Request:** "${promptInput.value}"`;
+            
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "piano_tone": { type: "STRING", enum: ["classic_ep", "bright_grand", "soft_felt", "synth_pop"] },
+                    "piano": { type: "ARRAY", items: { type: "OBJECT", properties: { "note": { "type": "STRING" }, "duration": { "type": "STRING" }, "time": { "type": "STRING" }, "velocity": { "type": "NUMBER" } }, required: ["note", "duration", "time", "velocity"] } }
+                },
+                required: ["piano", "piano_tone"]
+            };
+
+            const payload = { contents: [{ role: "user", parts: [{ text: instructionPrompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } };
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                const result = await response.json();
+                if (!result.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Invalid AI response structure.");
+                const composition = JSON.parse(result.candidates[0].content.parts[0].text);
+                playComposition(composition);
+            } catch (error) {
+                console.error("Error generating music:", error);
+                alert("Sorry, there was an error generating the music. Please try a different prompt.");
+            } finally {
+                generateBtn.disabled = false;
+                loaderContainer.classList.add('hidden');
+            }
+        }
+
+        function playComposition(composition) {
+            if (!composition || !composition.piano || !composition.piano.length) {
+                playingTitle.textContent = "Sorry, I don't know that song. Please try another.";
+                outputContainer.classList.remove('hidden');
+                return; 
+            }
+            
+            // Select the piano synth based on the AI's choice, defaulting to classic_ep
+            const activeSynth = synths.pianos[composition.piano_tone] || synths.pianos.classic_ep;
+
+            playingTitle.textContent = `AI Transcription Playing (Tone: ${composition.piano_tone})...`;
+            outputContainer.classList.remove('hidden');
+            Tone.Transport.bpm.value = bpmSlider.value;
+
+            new Tone.Part((time, value) => {
+                activeSynth.triggerAttackRelease(value.note, value.duration, time, value.velocity);
+                Tone.Draw.schedule(() => highlightPianoKey(value.note, Tone.Time(value.duration).toMilliseconds()), time);
+            }, composition.piano).start(0);
+
+            Tone.Transport.loop = true;
+            Tone.Transport.loopEnd = '4m';
+            Tone.Transport.start();
+        }
+
+        bpmSlider.addEventListener('input', (e) => {
+            bpmValue.textContent = e.target.value;
+            Tone.Transport.bpm.value = e.target.value;
+        });
+        stopBtn.addEventListener('click', () => {
+            Tone.Transport.stop();
+            outputContainer.classList.add('hidden');
+        });
+
+        generateBtn.addEventListener('click', generateMusic);
+        createPiano();
+    </script>
+</body>
+</html>
